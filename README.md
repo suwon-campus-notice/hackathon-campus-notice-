@@ -33,6 +33,29 @@
 
 기술 스택과 핵심 라이브러리는 팀 논의 후 결정합니다. AI 코딩 도구가 임의로 확정하거나 변경하지 않습니다.
 
+## 프로젝트 디렉터리 구조
+
+```text
+.
+├── frontend/   # 사용자 웹 화면
+├── backend/    # 서버 및 API
+├── crawler/    # 학교 공지사항 크롤링 및 수집
+├── database/   # 데이터베이스 관련 파일 및 스키마
+├── tests/      # 기능 테스트
+└── docs/       # 설계 문서 및 개발 문서
+```
+
+| 폴더 | 역할 |
+| --- | --- |
+| [`frontend/`](frontend/README.md) | 학생이 사용하는 웹 화면 개발 |
+| [`backend/`](backend/README.md) | 서버 및 API 개발 |
+| [`crawler/`](crawler/README.md) | 학교 공지사항 크롤링 및 수집 |
+| [`database/`](database/README.md) | 데이터베이스 관련 파일 및 스키마 관리 |
+| [`tests/`](tests/README.md) | 기능 테스트 관리 |
+| [`docs/`](docs/README.md) | 설계 문서 및 개발 문서 관리 |
+
+현재는 각 폴더의 역할만 정했으며, 기술 스택과 구체적인 구현 방법은 아직 확정하지 않았습니다.
+
 ## GitHub 브랜치 구조
 
 | 브랜치 | 역할 | 반영 원칙 |
