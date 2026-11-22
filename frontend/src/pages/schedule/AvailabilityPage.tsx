@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { Body, BottomActions, Screen, TopBar } from '../../components/layout'
 import { Button, Card, Chip, cx, Notice } from '../../components/ui'
@@ -5,27 +6,34 @@ import { WINDOW_END, WINDOW_START } from '../../lib/availability'
 import { formatHour } from '../../lib/format'
 import { scheduleActions } from '../../store'
 import { DAY_LABELS } from '../../types'
+import { CustomPicks, type CustomPick } from './CustomPicks'
 import { useMemberTeam } from './scheduleHelpers'
 import { teamAvailability } from './teamAvailability'
 
 const SPAN = WINDOW_END - WINDOW_START
+/** 투표 후보 최대 개수 (추천 시간 + 직접 추가한 시간) */
+const MAX_OPTIONS = 6
 const pct = (h: number) => `${((h - WINDOW_START) / SPAN) * 100}%`
 
 /** 공통 가능 시간: 추천 시간, 요일별 막대, 격자, 투표 올리기 */
 export function AvailabilityPage() {
   const { s, team, me } = useMemberTeam()
   const navigate = useNavigate()
+  const [custom, setCustom] = useState<CustomPick[]>([])
   if (!team || !me) return <Navigate to="/teams" replace />
 
   const base = `/teams/${team.id}`
   const { availability, notEntered, entered } = teamAvailability(s, team)
   const { total, days, picks } = availability
   const hasVote = Boolean(s.votes[team.id])
-  const canCreate = !hasVote && picks.length > 0
+  const recommended: CustomPick[] = picks.map((p) => ({ day: p.day, start: p.start }))
+  const options = [...recommended, ...custom]
+  const same = (a: CustomPick, b: CustomPick) => a.day === b.day && a.start === b.start
+  const canCreate = !hasVote && options.length > 0
   const peopleLabel = (n: number) => (n === total ? '전원' : `${n}명`)
 
   const createVote = () => {
-    if (scheduleActions.createVote(team.id, picks.map((p) => ({ day: p.day, start: p.start })))) {
+    if (scheduleActions.createVote(team.id, options)) {
       navigate(`${base}/vote`)
     }
   }
@@ -124,6 +132,17 @@ export function AvailabilityPage() {
             </Card>
           </>
         )}
+
+        <CustomPicks
+          picks={custom}
+          isTaken={(p) => options.some((o) => same(o, p))}
+          canAddMore={options.length < MAX_OPTIONS}
+          availableAt={(p) => (p.start >= WINDOW_START && p.start < WINDOW_END ? days[p.day].slots[(p.start - WINDOW_START) * 2] : undefined)}
+          total={total}
+          onAdd={(p) => setCustom((c) => [...c, p])}
+          onRemove={(p) => setCustom((c) => c.filter((x) => !same(x, p)))}
+          maxText={`후보는 최대 ${MAX_OPTIONS}개까지 만들 수 있어요.`}
+        />
       </Body>
       <BottomActions>
         {hasVote && <p className="m-0 text-center text-sm text-muted">진행 중인 투표가 있어요</p>}
