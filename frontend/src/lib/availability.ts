@@ -35,7 +35,7 @@ export interface Availability {
   picks: Pick[]
 }
 
-function isBusy(entries: TimetableEntry[], day: Day, t: number): boolean {
+export function isBusy(entries: TimetableEntry[], day: Day, t: number): boolean {
   return entries.some((e) => e.day === day && t >= e.start && t < e.end)
 }
 
