@@ -5,10 +5,10 @@ import { Button, Card, Chip, cx, Notice } from '../../components/ui'
 import { WINDOW_END, WINDOW_START } from '../../lib/availability'
 import { formatHour } from '../../lib/format'
 import { scheduleActions } from '../../store'
-import { DAY_LABELS } from '../../types'
+import { DAY_LABELS, type Day } from '../../types'
 import { CustomPicks, type CustomPick } from './CustomPicks'
 import { useMemberTeam } from './scheduleHelpers'
-import { teamAvailability } from './teamAvailability'
+import { membersAt, teamAvailability } from './teamAvailability'
 
 const SPAN = WINDOW_END - WINDOW_START
 /** 투표 후보 최대 개수 (추천 시간 + 직접 추가한 시간) */
@@ -20,6 +20,8 @@ export function AvailabilityPage() {
   const { s, team, me } = useMemberTeam()
   const navigate = useNavigate()
   const [custom, setCustom] = useState<CustomPick[]>([])
+  const [hover, setHover] = useState<Cell | null>(null)
+  const [pinned, setPinned] = useState<Cell | null>(null)
   if (!team || !me) return <Navigate to="/teams" replace />
 
   const base = `/teams/${team.id}`
@@ -30,6 +32,7 @@ export function AvailabilityPage() {
   const options = [...recommended, ...custom]
   const same = (a: CustomPick, b: CustomPick) => a.day === b.day && a.start === b.start
   const canCreate = !hasVote && options.length > 0
+  const shown = pinned ?? hover
   const peopleLabel = (n: number) => (n === total ? '전원' : `${n}명`)
 
   const createVote = () => {
@@ -97,18 +100,35 @@ export function AvailabilityPage() {
               {days.map((d) => (
                 <div key={d.day} className="flex h-6 items-center gap-2">
                   <span className="w-5 text-[13px] font-medium text-ink-2">{DAY_LABELS[d.day]}</span>
-                  <div className="relative h-5 flex-1 overflow-hidden rounded-md bg-soft">
+                  <div
+                    className="relative h-5 flex-1 cursor-pointer touch-manipulation overflow-hidden rounded-md bg-soft"
+                    onPointerMove={(e) => e.pointerType === 'mouse' && setHover({ day: d.day, slot: slotAt(e) })}
+                    onPointerLeave={() => setHover(null)}
+                    onClick={(e) => {
+                      const cell = { day: d.day, slot: slotAt(e) }
+                      // 고정된 칸을 다시 누르면 고정 해제
+                      setPinned((p) => (p && p.day === cell.day && p.slot === cell.slot ? null : cell))
+                    }}
+                  >
                     {d.ranges.map((r) => (
                       <div
                         key={r.start}
-                        className={cx('absolute top-0 h-5', d.people === total ? 'bg-accent' : 'bg-accent-light')}
+                        className={cx('pointer-events-none absolute top-0 h-5', d.people === total ? 'bg-accent' : 'bg-accent-light')}
                         style={{ left: pct(r.start), width: `${((r.end - r.start) / SPAN) * 100}%` }}
                       />
                     ))}
+                    {shown?.day === d.day && (
+                      <div
+                        aria-hidden="true"
+                        className="pointer-events-none absolute top-0 h-5 border-x-2 border-[#38bdf8]/40 bg-[#38bdf8]/40 bg-clip-padding"
+                        style={{ left: pct(WINDOW_START + shown.slot / 2), width: `${(0.5 / SPAN) * 100}%` }}
+                      />
+                    )}
                   </div>
                   <span className="w-8 text-right text-xs text-ink-2">{d.ranges.length ? peopleLabel(d.people) : '없음'}</span>
                 </div>
               ))}
+              <SlotDetail cell={shown} members={shown ? membersAt(s, team, shown.day, WINDOW_START + shown.slot / 2) : null} />
             </section>
 
             <Card className="p-0">
@@ -151,6 +171,43 @@ export function AvailabilityPage() {
         </Button>
       </BottomActions>
     </Screen>
+  )
+}
+
+interface Cell {
+  day: Day
+  /** 30분 칸 번호 (WINDOW_START 부터) */
+  slot: number
+}
+
+/** 막대 위 포인터 위치를 30분 칸 번호로 바꾼다. */
+function slotAt(e: React.MouseEvent<HTMLDivElement>): number {
+  const r = e.currentTarget.getBoundingClientRect()
+  const slot = Math.floor(((e.clientX - r.left) / r.width) * SPAN * 2)
+  return Math.min(SPAN * 2 - 1, Math.max(0, slot))
+}
+
+/** 고른 시간대에 누가 가능한지 보여주는 안내 */
+function SlotDetail({ cell, members }: { cell: Cell | null; members: { free: string[]; busy: string[] } | null }) {
+  return (
+    <div aria-live="polite" className="min-h-[4.5rem] rounded-control border border-line bg-surface px-3 py-2 text-sm">
+      {!cell || !members ? (
+        <p className="m-0 text-muted">막대에 마우스를 올리거나 눌러서 그 시간에 누가 가능한지 확인해 보세요. 누르면 고정돼요.</p>
+      ) : (
+        <>
+          <p className="m-0 font-bold">
+            {DAY_LABELS[cell.day]} {formatHour(WINDOW_START + cell.slot / 2)} ~ {formatHour(WINDOW_START + (cell.slot + 1) / 2)} · {members.free.length}/
+            {members.free.length + members.busy.length}명 가능
+          </p>
+          <p className="m-0 mt-1 text-ink-2">
+            <span className="font-medium">가능</span> {members.free.length ? members.free.join(', ') : '없음'}
+          </p>
+          <p className="m-0 text-muted">
+            <span className="font-medium">어려움</span> {members.busy.length ? members.busy.join(', ') : '없음'}
+          </p>
+        </>
+      )}
+    </div>
   )
 }
 
