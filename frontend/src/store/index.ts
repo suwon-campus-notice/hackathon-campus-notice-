@@ -1,12 +1,15 @@
 import { useSyncExternalStore } from 'react'
 import * as seed from '../mocks/seed'
+import type { Account } from '../mocks/seed'
 import { decide, singleTopOption } from '../lib/vote'
 import type { Day, Goal, Meeting, Team, TimetableEntry, Todo, TodoStatus, User, Vote } from '../types'
+import { createSync } from './sync'
 
 /**
- * 앱 전체 상태 (임시, 메모리에만 저장).
- * 백엔드 API 가 정해지면 이 파일의 액션을 API 호출로 바꾸고, 화면 코드는 그대로 둔다.
- * 새로고침하면 예시 데이터로 되돌아간다.
+ * 앱 전체 상태.
+ * - 공유 부분(SHARED_KEYS)은 테스트 서버(backend/)와 동기화해서 여러 기기가 같은 내용을 본다. 규칙은 여기서 그대로 처리한다.
+ * - currentUserId(로그인한 사람)와 ready 는 이 기기에만 있다.
+ * - 서버가 없으면(정적 호스팅, 테스트) 예시 데이터로만 동작하고 새로고침하면 되돌아간다.
  */
 export interface State {
   users: User[]
@@ -17,27 +20,96 @@ export interface State {
   meetings: Record<string, Meeting | undefined>
   goals: Goal[]
   todos: Todo[]
+  /** 로그인·비밀번호 찾기용 계정 (테스트 서버라 비밀번호를 그대로 둔다. 정식 백엔드에서는 서버만 가진다) */
+  accounts: Account[]
+  /** 서버 첫 로딩이 끝났는지 (서버가 없어도 true) */
+  ready: boolean
+  /** 서버에 연결돼 있는지 */
+  connected: boolean
 }
 
-function initial(): State {
+/** 서버와 공유하는 키. 나머지는 기기마다 따로다. */
+const SHARED_KEYS = ['users', 'teams', 'timetables', 'votes', 'meetings', 'goals', 'todos', 'accounts'] as const
+type Shared = Pick<State, (typeof SHARED_KEYS)[number]>
+
+/** 브라우저에서 실행 중이고 테스트가 아니면 서버와 동기화한다 */
+const SYNC = typeof window !== 'undefined' && typeof document !== 'undefined' && !import.meta.env.VITEST
+const USER_KEY = 'coetus.currentUserId'
+
+function storedUserId(): string | null {
+  try { return localStorage.getItem(USER_KEY) } catch { return null }
+}
+function storeUserId(id: string | null) {
+  try { id ? localStorage.setItem(USER_KEY, id) : localStorage.removeItem(USER_KEY) } catch { /* 저장 못 해도 동작에는 지장 없음 */ }
+}
+
+function seedShared(): Shared {
   return {
     users: structuredClone(seed.users),
     teams: structuredClone(seed.teams),
-    currentUserId: seed.CURRENT_USER_ID,
     timetables: structuredClone(seed.timetables),
     votes: structuredClone(seed.votes),
     meetings: structuredClone(seed.meetings),
     goals: structuredClone(seed.goals),
     todos: structuredClone(seed.todos),
+    accounts: structuredClone(seed.accounts),
+  }
+}
+
+function initial(): State {
+  return {
+    ...seedShared(),
+    // 서버 모드: 이 기기에 저장된 로그인만 인정. 테스트·서버 없음: 예시 사용자로 로그인된 상태
+    currentUserId: SYNC ? storedUserId() : seed.CURRENT_USER_ID,
+    ready: !SYNC,
+    connected: false,
   }
 }
 
 let state: State = initial()
 const listeners = new Set<() => void>()
+/** 마지막 액션이 공유 부분을 바꿨는지 (바꿨으면 서버로 보낸다) */
+let dirty = false
 
 function set(next: Partial<State>) {
   state = { ...state, ...next }
+  if (SHARED_KEYS.some((k) => k in next)) dirty = true
+  if ('currentUserId' in next && SYNC) storeUserId(next.currentUserId ?? null)
   listeners.forEach((l) => l())
+}
+
+const sync = createSync<Shared>({
+  getShared: () => Object.fromEntries(SHARED_KEYS.map((k) => [k, state[k]])) as unknown as Shared,
+  applyRemote: (shared) => {
+    state = { ...state, ...shared }
+    listeners.forEach((l) => l())
+  },
+  seed: seedShared,
+  onStatus: ({ connected, ready }) => {
+    if (state.connected !== connected || state.ready !== ready) {
+      state = { ...state, connected, ready }
+      listeners.forEach((l) => l())
+    }
+  },
+})
+
+/**
+ * 액션 묶음을 감싼다: 액션이 공유 상태를 바꿨으면 서버로 보내고, 충돌 때 다시 실행할 수 있게 기록한다.
+ * 화면 코드는 바뀌지 않는다 (같은 이름, 같은 반환값).
+ */
+function tracked<T extends Record<string, (...args: never[]) => unknown>>(actions: T): T {
+  if (!SYNC) return actions
+  const out: Record<string, unknown> = {}
+  for (const [name, fn] of Object.entries(actions)) {
+    out[name] = (...args: never[]) => {
+      if (sync.isReplaying()) return fn(...args)
+      dirty = false
+      const result = fn(...args)
+      if (dirty) { dirty = false; sync.push(() => { fn(...args) }) }
+      return result
+    }
+  }
+  return out as T
 }
 
 function subscribe(l: () => void) {
@@ -54,14 +126,21 @@ export function getState(): State {
   return state
 }
 
-/** 테스트나 시연에서 예시 데이터로 되돌린다 */
+/** 테스트나 시연에서 예시 데이터로 되돌린다 (이 기기만) */
 export function resetStore() {
   state = initial()
   listeners.forEach((l) => l())
 }
 
-let idSeq = 100
-const newId = (prefix: string) => `${prefix}${++idSeq}`
+/** 서버 문서를 비우고 예시 데이터로 되돌린다 (모든 기기에 적용) */
+export async function resetShared(): Promise<void> {
+  if (!SYNC) { resetStore(); return }
+  await fetch('api/reset', { method: 'POST' }).catch(() => undefined)
+  await sync.pull(true)
+}
+
+/** 기기가 달라도 겹치지 않는 id */
+const newId = (prefix: string) => `${prefix}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
 
 // ───── 읽기 도우미 ─────
 
@@ -94,11 +173,15 @@ export function visibleTodos(s: State, teamId: string): Todo[] {
 
 // ───── 계정 ─────
 
-export const auth = {
+const accountOf = (userId: string | null | undefined) => state.accounts.find((a) => a.userId === userId)
+const updateAccount = (userId: string, patch: Partial<Account>) =>
+  set({ accounts: state.accounts.map((a) => (a.userId === userId ? { ...a, ...patch } : a)) })
+
+export const auth = tracked({
   /** 아이디·비밀번호가 맞으면 로그인한다 */
   login(loginId: string, password: string): boolean {
     const user = state.users.find((u) => u.loginId === loginId)
-    const account = user && seed.accounts.find((a) => a.userId === user.id)
+    const account = user && accountOf(user.id)
     if (!user || !account || account.password !== password) return false
     set({ currentUserId: user.id })
     return true
@@ -113,8 +196,8 @@ export const auth = {
     if (auth.isLoginIdTaken(input.loginId)) return false
     const id = newId('u')
     const user: User = { id, name: input.name.trim(), loginId: input.loginId.trim(), studentId: input.studentId.trim() }
-    seed.accounts.push({ userId: id, password: input.password, question: input.question, answer: input.answer.trim().toLowerCase() })
-    set({ users: [...state.users, user], currentUserId: id, timetables: { ...state.timetables, [id]: [] } })
+    const account: Account = { userId: id, password: input.password, question: input.question, answer: input.answer.trim().toLowerCase() }
+    set({ users: [...state.users, user], accounts: [...state.accounts, account], currentUserId: id, timetables: { ...state.timetables, [id]: [] } })
     return true
   },
   /** 이름과 학번이 일치하는 계정의 아이디 */
@@ -124,32 +207,31 @@ export const auth = {
   /** 비밀번호 찾기용 질문 */
   questionFor(loginId: string): string | null {
     const user = state.users.find((u) => u.loginId === loginId.trim())
-    return (user && seed.accounts.find((a) => a.userId === user.id)?.question) ?? null
+    return (user && accountOf(user.id)?.question) ?? null
   },
   /** 질문의 답이 맞는지 (띄어쓰기·대소문자는 무시) */
   checkAnswer(loginId: string, answer: string): boolean {
     const user = state.users.find((u) => u.loginId === loginId.trim())
-    const account = user && seed.accounts.find((a) => a.userId === user.id)
+    const account = user && accountOf(user.id)
     const norm = (v: string) => v.replace(/\s+/g, '').toLowerCase()
     return Boolean(account && norm(account.answer) === norm(answer))
   },
   resetPassword(loginId: string, password: string): void {
     const user = state.users.find((u) => u.loginId === loginId.trim())
-    const account = user && seed.accounts.find((a) => a.userId === user.id)
-    if (account) account.password = password
+    if (user && accountOf(user.id)) updateAccount(user.id, { password })
   },
   /** 로그인한 사용자의 비밀번호 변경. 현재 비밀번호가 틀리면 false */
   changePassword(current: string, next: string): boolean {
-    const account = seed.accounts.find((a) => a.userId === state.currentUserId)
+    const account = accountOf(state.currentUserId)
     if (!account || account.password !== current) return false
-    account.password = next
+    updateAccount(account.userId, { password: next })
     return true
   },
-}
+})
 
 // ───── 팀 ─────
 
-export const teamActions = {
+export const teamActions = tracked({
   create(name: string): Team {
     const team: Team = {
       id: newId('t'),
@@ -190,11 +272,11 @@ export const teamActions = {
     set({ teams: state.teams.map((t) => (t.id === teamId ? { ...t, memberIds: t.memberIds.filter((m) => m !== me) } : t)) })
     return true
   },
-}
+})
 
 // ───── 시간표 ─────
 
-export const timetableActions = {
+export const timetableActions = tracked({
   add(entry: Omit<TimetableEntry, 'id'>): { ok: true } | { ok: false; reason: 'order' | 'overlap'; conflict?: TimetableEntry } {
     const me = state.currentUserId ?? ''
     if (entry.end <= entry.start) return { ok: false, reason: 'order' }
@@ -208,11 +290,11 @@ export const timetableActions = {
     const me = state.currentUserId ?? ''
     set({ timetables: { ...state.timetables, [me]: (state.timetables[me] ?? []).filter((x) => x.id !== entryId) } })
   },
-}
+})
 
 // ───── 일정(투표·회의) ─────
 
-export const scheduleActions = {
+export const scheduleActions = tracked({
   /** 새 투표 만들기. 진행 중인 투표가 있으면 만들 수 없다 */
   createVote(teamId: string, options: Array<{ day: Day; start: number }>): boolean {
     if (state.votes[teamId]) return false
@@ -285,7 +367,7 @@ export const scheduleActions = {
     const m = state.meetings[teamId]
     if (m) set({ meetings: { ...state.meetings, [teamId]: { ...m, day, start } } })
   },
-}
+})
 
 // ───── 목표·할 일 ─────
 
@@ -296,7 +378,7 @@ export interface TodoDraft {
   due: string
 }
 
-export const todoActions = {
+export const todoActions = tracked({
   /** 목표와 개인 목표(할 일)를 함께 만든다 (팀장) */
   createGoal(teamId: string, title: string, drafts: TodoDraft[]): string {
     const goalId = newId('g')
@@ -340,9 +422,11 @@ export const todoActions = {
   saveNote(todoId: string, note: string) {
     set({ todos: state.todos.map((t) => (t.id === todoId ? { ...t, note } : t)) })
   },
-}
+})
 
 /** 전체 상태를 구독한다. 화면에서는 이 값을 myTeams(s), isLeader(s, id) 같은 읽기 도우미에 넘겨 쓴다. */
 export function useAppState(): State {
   return useStore((s) => s)
 }
+
+if (SYNC) sync.start()
