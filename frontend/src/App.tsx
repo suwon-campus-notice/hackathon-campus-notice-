@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { HashRouter, Navigate, Outlet, Route, Routes } from 'react-router-dom'
 import { OfflineGate } from './components/layout/OfflineGate'
 import { ChangePasswordPage } from './pages/account/ChangePasswordPage'
@@ -29,6 +30,12 @@ import { TodoDetailPage } from './pages/todos/TodoDetailPage'
 import { TodoListPage } from './pages/todos/TodoListPage'
 import { useStore } from './store'
 
+/** 서버에서 팀 데이터를 처음 받을 때까지 잠깐 기다린다 (서버가 없으면 바로 지나간다) */
+function ReadyGate({ children }: { children: ReactNode }) {
+  const ready = useStore((s) => s.ready)
+  return ready ? <>{children}</> : <p className="m-0 p-6 text-center text-sm text-muted">팀 데이터를 불러오는 중…</p>
+}
+
 /** 로그인하지 않았으면 로그인 화면으로 보낸다 */
 function RequireLogin() {
   const loggedIn = useStore((s) => s.currentUserId !== null)
@@ -43,6 +50,7 @@ export default function App() {
   return (
     <HashRouter>
       <OfflineGate>
+      <ReadyGate>
       <Routes>
         <Route path="/" element={<Navigate to="/teams" replace />} />
         <Route path="/login" element={<LoginPage />} />
@@ -82,6 +90,7 @@ export default function App() {
 
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
+      </ReadyGate>
       </OfflineGate>
     </HashRouter>
   )
