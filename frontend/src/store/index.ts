@@ -4,6 +4,7 @@ import type { Account } from '../mocks/seed'
 import { decide, singleTopOption } from '../lib/vote'
 import type { Day, Goal, Meeting, Team, TimetableEntry, Todo, TodoStatus, User, Vote } from '../types'
 import { createSync } from './sync'
+import * as testSession from './testSession'
 
 /**
  * 앱 전체 상태.
@@ -40,7 +41,10 @@ function storedUserId(): string | null {
   try { return localStorage.getItem(USER_KEY) } catch { return null }
 }
 function storeUserId(id: string | null) {
-  try { id ? localStorage.setItem(USER_KEY, id) : localStorage.removeItem(USER_KEY) } catch { /* 저장 못 해도 동작에는 지장 없음 */ }
+  try {
+    if (id) localStorage.setItem(USER_KEY, id)
+    else localStorage.removeItem(USER_KEY)
+  } catch { /* 저장 못 해도 동작에는 지장 없음 */ }
 }
 
 function seedShared(): Shared {
@@ -177,17 +181,27 @@ const accountOf = (userId: string | null | undefined) => state.accounts.find((a)
 const updateAccount = (userId: string, patch: Partial<Account>) =>
   set({ accounts: state.accounts.map((a) => (a.userId === userId ? { ...a, ...patch } : a)) })
 
+export type LoginResult = { ok: true } | { ok: false; reason: 'wrong' | 'busy'; minutesLeft?: number }
+
 export const auth = tracked({
-  /** 아이디·비밀번호가 맞으면 로그인한다 */
-  login(loginId: string, password: string): boolean {
+  /**
+   * 아이디·비밀번호가 맞으면 로그인한다.
+   * 테스트 계정(팀장, 팀원1~4)은 한 사람씩만 쓸 수 있어서 서버 잠금을 얻어야 한다 (다른 사람이 쓰는 중이면 busy).
+   */
+  async login(loginId: string, password: string): Promise<LoginResult> {
     const user = state.users.find((u) => u.loginId === loginId)
     const account = user && accountOf(user.id)
-    if (!user || !account || account.password !== password) return false
+    if (!user || !account || account.password !== password) return { ok: false, reason: 'wrong' }
+    if (SYNC) {
+      const lock = await testSession.acquire(loginId)
+      if (lock.test && !lock.ok) return { ok: false, reason: 'busy', minutesLeft: lock.minutesLeft }
+    }
     set({ currentUserId: user.id })
-    return true
+    return { ok: true }
   },
   logout() {
     set({ currentUserId: null })
+    if (SYNC) void testSession.release()
   },
   isLoginIdTaken(loginId: string): boolean {
     return state.users.some((u) => u.loginId === loginId.trim())
@@ -429,4 +443,11 @@ export function useAppState(): State {
   return useStore((s) => s)
 }
 
-if (SYNC) sync.start()
+if (SYNC) {
+  sync.start()
+  // 테스트 계정: 10분 동안 활동이 없거나 잠금을 잃으면 자동 로그아웃
+  testSession.watch(() => {
+    if (state.currentUserId) set({ currentUserId: null })
+    window.location.hash = '#/login?expired=1'
+  })
+}

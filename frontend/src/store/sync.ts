@@ -52,12 +52,13 @@ export function createSync<S>(opts: SyncOptions<S>) {
     }
   }
 
-  async function put(base: number, state: S): Promise<{ ok: true; version: number } | { ok: false; conflict: { version: number; state: S | null } } | null> {
+  async function put(base: number, state: S): Promise<{ ok: true; version: number; state?: S } | { ok: false; conflict: { version: number; state: S | null } } | null> {
     try {
       const r = await fetch(`${API}state`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ base, state }) })
       if (r.status === 409) return { ok: false, conflict: (await r.json()) as { version: number; state: S | null } }
       if (!r.ok) return null
-      return { ok: true, version: ((await r.json()) as { version: number }).version }
+      const j = (await r.json()) as { version: number; state?: S }
+      return { ok: true, version: j.version, state: j.state }
     } catch {
       return null
     }
@@ -78,7 +79,7 @@ export function createSync<S>(opts: SyncOptions<S>) {
       // 서버가 비어 있다 → 예시 데이터를 올린다 (다른 기기가 먼저 올렸으면 409 → 그걸 받는다)
       const seed = opts.seed()
       const r = await put(version, seed)
-      if (r && r.ok) { version = r.version; opts.applyRemote(seed) }
+      if (r && r.ok) { version = r.version; opts.applyRemote(r.state ?? seed) }   // 서버가 테스트 계정을 덧붙여 돌려줄 수 있다
       else if (r && !r.ok && r.conflict.state) { version = r.conflict.version; opts.applyRemote(r.conflict.state) }
       status()
       return true
@@ -105,6 +106,7 @@ export function createSync<S>(opts: SyncOptions<S>) {
         if (!r) { connected = false; status(); return }       // 네트워크 실패: 다음 변경 때 다시 시도
         if (r.ok) {
           version = r.version
+          if (r.state) opts.applyRemote(r.state)
           pending = pending.filter((f) => !snapshot.includes(f))
           if (!connected) { connected = true; status() }
           continue
