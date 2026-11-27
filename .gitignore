@@ -232,3 +232,9 @@ coverage/
 
 # Local deployment metadata
 .vercel/
+
+# Backend (Coetus)
+backend/data/
+*.db
+*.sqlite3
+frontend/dist/
