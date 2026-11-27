@@ -5,6 +5,7 @@
 시간은 프론트 types.ts 처럼 '시 단위 소수'(15 = 15:00)로 주고받고, DB 에는 분으로 저장한다.
 """
 import math
+from contextlib import contextmanager
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends
@@ -12,6 +13,7 @@ from pydantic import BaseModel
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.exc import StaleDataError
 
 from ..config import settings
 from ..db import get_db, utcnow
@@ -140,6 +142,17 @@ def check_slot(day: int, start: float) -> int:
     return minutes
 
 
+@contextmanager
+def guard(db: Session):
+    """다른 사람이 같은 순간에 투표를 확정·취소해서 지워졌을 때(표를 쓰려는데 투표가 없어짐 등)
+    서버 오류(500) 대신 알아볼 수 있는 안내(409)를 돌려준다. 화면은 이 오류를 받으면 최신 상태를 다시 불러온다."""
+    try:
+        yield
+    except (IntegrityError, StaleDataError):
+        db.rollback()
+        raise ApiError(409, "vote_changed", "투표가 방금 바뀌었어요. 최신 상태를 다시 확인해 주세요.")
+
+
 def need_vote(db: Session, team_id: int) -> Vote:
     vote = find_vote(db, team_id)
     if not vote:
@@ -206,21 +219,22 @@ def cast_ballot(team_id: str, body: BallotIn, user: User = Depends(current_user)
         picked = set()
     if not picked or not picked <= {o.id for o in options}:
         raise ApiError(400, "invalid_option", "투표할 시간을 하나 이상 골라 주세요.")
-    db.execute(delete(Ballot).where(Ballot.vote_id == vote.id, Ballot.user_id == user.id))
-    for o in picked:
-        db.add(Ballot(vote_id=vote.id, user_id=user.id, option_id=o))
-    db.flush()
+    with guard(db):
+        db.execute(delete(Ballot).where(Ballot.vote_id == vote.id, Ballot.user_id == user.id))
+        for o in picked:
+            db.add(Ballot(vote_id=vote.id, user_id=user.id, option_id=o))
+        db.flush()
 
-    option_ids = [o.id for o in options]
-    decision = rules.decide(option_ids, ballots_of(db, vote.id), team_size(db, team.id))
-    if decision.kind == "confirmed":
-        confirm(db, vote, next(o for o in options if o.id == decision.option_id), decision.votes)
-    elif decision.kind == "tie":
-        db.execute(delete(VoteOption).where(VoteOption.vote_id == vote.id, VoteOption.id.not_in(decision.option_ids)))
-        db.execute(delete(Ballot).where(Ballot.vote_id == vote.id))
-        vote.revote = True
-        vote.deadline = new_deadline()
-    db.commit()
+        option_ids = [o.id for o in options]
+        decision = rules.decide(option_ids, ballots_of(db, vote.id), team_size(db, team.id))
+        if decision.kind == "confirmed":
+            confirm(db, vote, next(o for o in options if o.id == decision.option_id), decision.votes)
+        elif decision.kind == "tie":
+            db.execute(delete(VoteOption).where(VoteOption.vote_id == vote.id, VoteOption.id.not_in(decision.option_ids)))
+            db.execute(delete(Ballot).where(Ballot.vote_id == vote.id))
+            vote.revote = True
+            vote.deadline = new_deadline()
+        db.commit()
     return schedule_out(db, team.id)
 
 
@@ -230,8 +244,9 @@ def cancel_vote(team_id: str, user: User = Depends(current_user), db: Session = 
     vote = need_vote(db, team.id)
     if vote.created_by != user.id and me.role != LEADER:
         raise ApiError(403, "not_allowed", "투표를 만든 사람이나 팀장만 취소할 수 있어요.")
-    db.delete(vote)
-    db.commit()
+    with guard(db):
+        db.delete(vote)
+        db.commit()
     return schedule_out(db, team.id)
 
 
@@ -246,8 +261,9 @@ def confirm_ended(team_id: str, user: User = Depends(current_user), db: Session 
     top = rules.single_top([o.id for o in options], ballots)
     if top is None:
         raise ApiError(409, "no_single_top", "가장 많이 고른 시간이 하나로 정해지지 않아요. 다시 투표해 주세요.")
-    confirm(db, vote, next(o for o in options if o.id == top), rules.tally([o.id for o in options], ballots)[top])
-    db.commit()
+    with guard(db):
+        confirm(db, vote, next(o for o in options if o.id == top), rules.tally([o.id for o in options], ballots)[top])
+        db.commit()
     return schedule_out(db, team.id)
 
 
@@ -257,8 +273,9 @@ def restart_vote(team_id: str, user: User = Depends(current_user), db: Session =
     vote = need_vote(db, team.id)
     if not is_ended(vote):
         raise ApiError(409, "vote_not_ended", "아직 투표가 끝나지 않았어요.")
-    db.delete(vote)
-    db.commit()
+    with guard(db):
+        db.delete(vote)
+        db.commit()
     return schedule_out(db, team.id)
 
 

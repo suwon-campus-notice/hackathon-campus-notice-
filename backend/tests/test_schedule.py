@@ -264,3 +264,23 @@ def test_team_delete_removes_vote_and_meeting(make_user, db):
     create_vote(jin, team)
     assert jin.post(url(team, "leave")).status_code == 204  # 팀장 혼자인 팀은 삭제
     assert db.query(models.Vote).count() == 0 and db.query(models.VoteOption).count() == 0
+
+
+def test_concurrent_change_returns_conflict_not_500(make_user, monkeypatch):
+    """다른 사람이 같은 순간에 투표를 지워서 표를 쓸 수 없게 되면 500 이 아니라 409(vote_changed)"""
+    from sqlalchemy.exc import IntegrityError
+
+    team, (jin, min_, *_) = make_group(make_user)
+    create_vote(jin, team)
+    ids = option_ids(jin, team)
+
+    def boom(*_a, **_k):
+        raise IntegrityError("insert", {}, Exception("FOREIGN KEY constraint failed"))
+
+    monkeypatch.setattr(rules, "decide", boom)
+    r = vote(min_, team, [ids[0]])
+    assert r.status_code == 409 and r.json()["code"] == "vote_changed"
+    monkeypatch.undo()
+    # 실패한 요청의 표는 남지 않고, 이어서 정상적으로 투표할 수 있다
+    assert jin.get(url(team, "schedule")).json()["vote"]["ballots"] == {}
+    assert vote(min_, team, [ids[0]]).status_code == 200

@@ -69,7 +69,7 @@ export function SchedulePage() {
 
   return (
     <Screen nav={<TeamTabBar teamId={team.id} />}>
-      <TopBar title="일정" />
+      <TopBar title="일정" back={{ to: base, always: true }} />
       <Body>
         {vote && !vote.ended && (
           <Card className="flex flex-col gap-3">
