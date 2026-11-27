@@ -53,7 +53,7 @@ export function GoalFormPage() {
   const names = team.memberIds.map((id) => userName(s, id))
   const update = (key: number, patch: Partial<Card>) => setCards((cs) => cs.map((c) => (c.key === key ? { ...c, ...patch } : c)))
 
-  function submit(e: FormEvent) {
+  async function submit(e: FormEvent) {
     e.preventDefault()
     const nextErrors: Record<number, CardError> = {}
     for (const c of cards) {
@@ -69,8 +69,8 @@ export function GoalFormPage() {
     if (tError || Object.keys(nextErrors).length > 0) return
 
     const drafts: TodoDraft[] = cards.map((c) => ({ id: c.id, title: c.title.trim(), assigneeId: c.assigneeId, due: c.due }))
-    if (goal) todoActions.updateGoal(goal.id, title.trim(), drafts)
-    else todoActions.createGoal(teamId, title.trim(), drafts)
+    if (goal) await todoActions.updateGoal(goal.id, title.trim(), drafts)
+    else await todoActions.createGoal(teamId, title.trim(), drafts)
     navigate(back)
   }
 

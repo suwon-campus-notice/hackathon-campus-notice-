@@ -7,10 +7,10 @@
 모두 가짜입니다 (이름·학번·비밀번호). 프론트 mocks/seed.ts 의 예시 데이터와 같은 모양으로 맞췄습니다.
 로그인: jinwoo / minsu / jihoon / seoyeon / haneul, 비밀번호는 모두 1234
 비밀번호 찾기 답: jinwoo=제주, minsu=민수, 나머지=테스트
-(투표·할 일 예시는 2차 때 추가합니다.)
+투표(소프트웨어공학 팀플), 확정된 회의(해커톤 팀), 목표·할 일도 프론트 예시와 같게 넣습니다 (마감일은 오늘 기준).
 """
 import sys
-from datetime import timedelta
+from datetime import date, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -46,6 +46,29 @@ TIMETABLES = {
 }
 
 
+# 팀 이름 → 진행 중인 투표: (만든 사람, [(요일, 시작 시각)], {아이디: [고른 후보 번호(0부터)]}, 남은 시간)
+VOTES = {
+    "소프트웨어공학 팀플": ("jihoon", [(2, 15), (0, 16), (6, 14)], {"minsu": [0], "jihoon": [0, 1], "seoyeon": [1]}, 23),
+}
+
+# 팀 이름 → 이미 확정된 회의: (요일, 시작 시각, 득표 수)
+MEETINGS = {"해커톤 팀": (2, 15, 4)}
+
+# (팀 이름, 큰 목표, [(할 일, 담당자, 오늘로부터 며칠 뒤 마감, 상태, 수행 내용)])
+GOALS = [
+    ("소프트웨어공학 팀플", "중간 발표 준비", [
+        ("발표 자료 초안 작성", "jinwoo", 2, "doing", ""),
+        ("시연 영상 촬영", "minsu", 4, "doing", ""),
+        ("발표 대본 작성", "jihoon", 3, "requested", "발표 대본 초안을 작성했어요. 슬라이드 1~8장 분량이고, 읽어 보니 약 10분 걸려요. 팀원 의견을 받아 수정할 예정이에요."),
+    ]),
+    ("소프트웨어공학 팀플", "최종 보고서", [
+        ("보고서 목차 정리", "seoyeon", 8, "done", "보고서 목차를 1장 개요부터 5장 결론까지 5개 장으로 정리했어요."),
+        ("참고 문헌 정리", "minsu", 10, "doing", ""),
+    ]),
+    ("해커톤 팀", "아이디어 정리", [("아이디어 후보 5개 정리", "jinwoo", 0, "doing", "")]),
+]
+
+
 def seed(db: Session) -> None:
     """가짜 데이터를 넣는다. 이미 jinwoo 가 있으면 아무것도 하지 않고 ValueError."""
     if db.scalar(select(models.User).where(models.User.login_id == "jinwoo")):
@@ -57,16 +80,50 @@ def seed(db: Session) -> None:
         db.add(u)
         users[login_id] = u
     db.flush()
+    teams = {}
     for i, (name, leader, members, days_left, code) in enumerate(TEAMS):
         team = models.Team(name=name)
         db.add(team)
         db.flush()
+        teams[name] = team
         for m in members:
             db.add(models.TeamMember(team_id=team.id, user_id=users[m].id, role="leader" if m == leader else "member"))
         db.add(models.Invite(team_id=team.id, token=code, expires_at=utcnow() + timedelta(days=days_left, hours=-1)))
     for login_id, entries in TIMETABLES.items():
         for day, start, end, kind in entries:
             db.add(models.TimetableEntry(user_id=users[login_id].id, day=day, start_min=round(start * 60), end_min=round(end * 60), kind=kind))
+    for team_name, (creator, slots, ballots, hours_left) in VOTES.items():
+        vote = models.Vote(team_id=teams[team_name].id, created_by=users[creator].id, deadline=utcnow() + timedelta(hours=hours_left), revote=False)
+        db.add(vote)
+        db.flush()
+        options = []
+        for day, start in slots:
+            o = models.VoteOption(vote_id=vote.id, day=day, start_min=round(start * 60))
+            db.add(o)
+            options.append(o)
+        db.flush()
+        for login_id, picks in ballots.items():
+            for n in picks:
+                db.add(models.Ballot(vote_id=vote.id, user_id=users[login_id].id, option_id=options[n].id))
+    for team_name, (day, start, votes) in MEETINGS.items():
+        db.add(models.Meeting(team_id=teams[team_name].id, day=day, start_min=round(start * 60), votes=votes))
+    today = date.today()
+    for team_name, title, todos in GOALS:
+        goal = models.Goal(team_id=teams[team_name].id, title=title)
+        db.add(goal)
+        db.flush()
+        for todo_title, assignee, offset, status, note in todos:
+            db.add(
+                models.Todo(
+                    goal_id=goal.id,
+                    team_id=teams[team_name].id,
+                    title=todo_title,
+                    assignee_id=users[assignee].id,
+                    due=(today + timedelta(days=offset)).isoformat(),
+                    status=status,
+                    note=note,
+                )
+            )
     db.commit()
 
 

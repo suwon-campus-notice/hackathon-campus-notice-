@@ -1,10 +1,10 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Body, MainTabBar, Screen, TopBar } from '../../components/layout'
 import { Button, Chip, TextField } from '../../components/ui'
 import { DAY_LABELS, type Team } from '../../types'
 import { formatHour } from '../../lib/format'
-import { myTeams, useAppState, visibleTodos, type State } from '../../store'
+import { myTeams, refreshTeams, useAppState, visibleTodos, type State } from '../../store'
 
 /** 팀 카드에 붙일 상태 칩들 */
 function statusChips(s: State, team: Team) {
@@ -28,6 +28,11 @@ export function TeamListPage() {
   const teams = myTeams(s)
   const [joining, setJoining] = useState(false)
   const [code, setCode] = useState('')
+  const teamIds = teams.map((t) => t.id).join(',')
+  // 서버 모드: 목록에 들어올 때마다 각 팀의 투표·할 일 현황을 최신으로 불러온다
+  useEffect(() => {
+    void refreshTeams(teamIds ? teamIds.split(',') : [])
+  }, [teamIds])
 
   function submit(e: FormEvent) {
     e.preventDefault()

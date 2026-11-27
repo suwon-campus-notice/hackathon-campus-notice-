@@ -18,6 +18,8 @@ export interface Team {
   inviteCode: string
   /** 초대 링크 만료까지 남은 일수 (0 이하면 만료) */
   inviteDaysLeft: number
+  /** 서버가 덧붙여 주는 팀원 이름 (이름 표시용) */
+  members?: Array<{ id: string; name: string }>
 }
 
 /** 시간표에 입력한 바쁜 시간. start/end 는 시(時) 단위 소수 (9.5 = 9시 30분) */

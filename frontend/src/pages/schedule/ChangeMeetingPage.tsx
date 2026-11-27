@@ -1,9 +1,9 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { Body, BottomActions, Screen, TopBar } from '../../components/layout'
 import { Button, Chip, cx } from '../../components/ui'
 import { formatHour } from '../../lib/format'
-import { scheduleActions } from '../../store'
+import { availabilityActions, scheduleActions } from '../../store'
 import { DAY_LABELS, type Day } from '../../types'
 import { optionLabel, useMemberTeam } from './scheduleHelpers'
 import { teamAvailability } from './teamAvailability'
@@ -13,6 +13,10 @@ export function ChangeMeetingPage() {
   const { s, team, me, leader } = useMemberTeam()
   const navigate = useNavigate()
   const [choice, setChoice] = useState<string | null>(null)
+  const teamId = team?.id
+  useEffect(() => {
+    if (teamId) void availabilityActions.load(teamId)
+  }, [teamId])
   if (!team || !me) return <Navigate to="/teams" replace />
 
   const schedule = `/teams/${team.id}/schedule`
@@ -36,10 +40,10 @@ export function ChangeMeetingPage() {
       })),
   ]
 
-  const submit = (e: FormEvent) => {
+  const submit = async (e: FormEvent) => {
     e.preventDefault()
     const c = choices.find((x) => x.key === selected)
-    if (c && c.key !== currentKey) scheduleActions.changeMeeting(team.id, c.day, c.start)
+    if (c && c.key !== currentKey) await scheduleActions.changeMeeting(team.id, c.day, c.start)
     navigate(schedule, { replace: true })
   }
 

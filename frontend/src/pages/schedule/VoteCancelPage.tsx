@@ -21,8 +21,8 @@ export function VoteCancelPage() {
       <BottomActions>
         <Button
           variant="dangerSolid"
-          onClick={() => {
-            scheduleActions.cancelVote(team.id)
+          onClick={async () => {
+            await scheduleActions.cancelVote(team.id)
             navigate(schedule, { replace: true })
           }}
         >

@@ -15,7 +15,7 @@ function parseHour(text: string): number {
   return h + m / 60
 }
 
-type FormError = { reason: 'order' } | { reason: 'overlap'; conflict: TimetableEntry }
+type FormError = { reason: 'order' } | { reason: 'overlap'; conflict: TimetableEntry } | { reason: 'error'; message: string }
 
 /** 내 시간표(직접 입력): 요일·시작·종료·구분을 골라 일정을 추가하고 목록에서 지운다 */
 export function TimetableManualPage() {
@@ -36,15 +36,19 @@ export function TimetableManualPage() {
     setError(null)
   }
 
-  const submit = (e: FormEvent) => {
+  const submit = async (e: FormEvent) => {
     e.preventDefault()
-    const result = timetableActions.add({
+    const result = await timetableActions.add({
       day: DAY_LABELS.indexOf(day as (typeof DAY_LABELS)[number]) as Day,
       start: parseHour(start),
       end: parseHour(end),
       kind,
     })
-    setError(result.ok ? null : result.reason === 'order' ? { reason: 'order' } : { reason: 'overlap', conflict: result.conflict! })
+    if (result.ok) setError(null)
+    else if (result.reason === 'error') setError({ reason: 'error', message: result.message })
+    else if (result.reason === 'order') setError({ reason: 'order' })
+    // 서버가 겹친 일정을 알려 주지 않으면 겹쳤다는 사실만 보여 준다
+    else setError(result.conflict ? { reason: 'overlap', conflict: result.conflict } : { reason: 'error', message: '이미 입력한 일정과 시간이 겹쳐요.' })
   }
 
   const message =
@@ -52,7 +56,9 @@ export function TimetableManualPage() {
       ? '종료 시간은 시작 시간보다 늦어야 해요.'
       : error?.reason === 'overlap'
         ? `이미 입력한 ${formatRange(error.conflict.day, error.conflict.start, error.conflict.end)} 일정과 시간이 겹쳐요.`
-        : null
+        : error?.reason === 'error'
+          ? error.message
+          : null
 
   return (
     <Screen nav={<MainTabBar />}>

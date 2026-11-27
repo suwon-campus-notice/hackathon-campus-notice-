@@ -9,8 +9,8 @@ export function LeaveTeamPage() {
   const navigate = useNavigate()
   if (!team || !me || !team.memberIds.includes(me.id)) return <Navigate to="/teams" replace />
 
-  function leave() {
-    if (team && teamActions.leave(team.id)) navigate('/teams')
+  async function leave() {
+    if (team && (await teamActions.leave(team.id))) navigate('/teams')
   }
 
   return (

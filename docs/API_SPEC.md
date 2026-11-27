@@ -1,7 +1,7 @@
-# Coetus API 명세 (1차: 계정 · 팀 · 시간표 · 공통 공강)
+# Coetus API 명세 (1차: 계정 · 팀 · 시간표 · 공통 공강 / 2차: 투표 · 회의 · 목표 · 할 일)
 
 프론트가 이 문서만 보고 연결할 수 있도록 정리했습니다. 자동 문서(`/docs`, 같은 내용을 Swagger 로 보여줌)도 서버에서 열립니다.
-**2차(회의 투표·확정, 목표·할 일)는 아직 없습니다.**
+2차(회의 투표·확정, 목표·할 일)는 7·8장에 있습니다.
 
 ## 0. 공통 규칙
 
@@ -33,6 +33,13 @@
 | `timetableActions.add` / `remove` | `POST api/timetable` / `DELETE api/timetable/{id}` |
 | `state.timetables[내 id]` | `GET api/timetable` |
 | `teamAvailability`, `membersAt` | `GET api/teams/{id}/availability` |
+| `scheduleActions.createVote` / `castVote` / `cancelVote` | `POST api/teams/{id}/vote` / `PUT api/teams/{id}/vote/ballot` / `DELETE api/teams/{id}/vote` |
+| `scheduleActions.confirmEnded` / `restartVote` / `endVote` | `POST api/teams/{id}/vote/confirm` / `restart` / `end` |
+| `scheduleActions.changeMeeting` | `PUT api/teams/{id}/meeting` |
+| `state.votes[팀]`, `state.meetings[팀]` | `GET api/teams/{id}/schedule` |
+| `todoActions.createGoal` / `updateGoal` / `deleteGoal` | `POST api/teams/{id}/goals` / `PUT .../goals/{goalId}` / `DELETE .../goals/{goalId}` |
+| `todoActions.setStatus` / `saveNote` | `POST .../todos/{id}/request` · `confirm` / `PUT .../todos/{id}/note` |
+| `state.goals`, `state.todos` | `GET api/teams/{id}/todos` |
 
 > 주의: store 의 함수들은 지금 동기(바로 값을 돌려줌)인데 API 는 비동기입니다. 연결할 때 `await` 로 바뀌는 부분은 프론트에서 처리해야 합니다.
 
@@ -182,3 +189,86 @@
 - **비밀번호 재설정:** 3단계 요청에 답을 한 번 더 보내야 합니다.
 - **에러 처리:** 시간표 겹침(`overlap`)의 `conflict`, 투표·할 일(2차) 오류도 같은 `{code, message}` 형식을 씁니다.
 - **프론트 빌드·배포 주소:** `base: './'` + HashRouter 이므로 `/<아이디>/` 아래에서 그대로 동작합니다 (공개 주소에서 확인함).
+
+
+---
+
+## 7. 회의 시간 투표 · 회의 (2차) `api/teams/{id}/...`
+
+**모든 동작의 응답이 같은 모양(`Schedule`)입니다.** 지금의 투표(없으면 `null`)와 확정된 회의(없으면 `null`)가 들어 있어서, 화면은 동작 뒤 응답을 그대로 상태에 넣으면 됩니다. 팀원이 아니면 모두 404 `team_not_found`.
+
+```json
+{
+  "vote": {
+    "id": "1", "teamId": "1", "createdBy": "3",
+    "options": [{ "id": "1", "day": 2, "start": 15 }, { "id": "2", "day": 0, "start": 16 }],
+    "ballots": { "2": ["1"], "3": ["1", "2"] },
+    "hoursLeft": 23, "revote": false, "ended": false
+  },
+  "meeting": null
+}
+```
+`meeting`: `{ "teamId": "1", "day": 2, "start": 15, "votes": 3 }` (`votes` = 확정 당시 득표 수).
+- `start`: 시 단위 소수 (`15` = 15:00, `9.5` = 9:30). 회의는 **시작 시간만** 정합니다. 30분 단위, 24시 전.
+- `ballots`: 사용자 id → 고른 후보 id 목록. 팀원은 서로의 표를 볼 수 있습니다 (투표 전에도).
+- `hoursLeft`: 마감까지 남은 시간(올림). `ended`: 마감 시각이 지났는지 (과반을 못 넘기고 끝난 투표). 서버는 **마감 시각**을 저장하고 조회할 때 판정합니다.
+
+| 요청 | 권한 | 설명 |
+| --- | --- | --- |
+| `GET api/teams/{id}/schedule` | 팀원 | 일정 탭 |
+| `POST api/teams/{id}/vote` `{ "options": [{ "day": 2, "start": 15 }, …] }` | 팀원 누구나 | 투표 만들기 → **201** `Schedule`. 후보 1~6개(추천 시간 + 직접 추가한 시간). 확정된 회의가 있으면 새 투표가 만들어지며 사라짐 |
+| `PUT api/teams/{id}/vote/ballot` `{ "optionIds": ["1", "2"] }` | 팀원 | 내 표 저장(처음·수정). 과반이면 회의 확정, 최다표가 같으면 그 후보들끼리 재투표 |
+| `DELETE api/teams/{id}/vote` | 만든 사람, 팀장 | 투표 취소. 받은 표가 모두 사라짐 |
+| `POST api/teams/{id}/vote/confirm` | 팀장 | 마감된 투표를 **단독 최다표** 후보로 확정 |
+| `POST api/teams/{id}/vote/restart` | 팀장 | 마감된 투표를 닫고 새로 시작할 수 있게 함 |
+| `POST api/teams/{id}/vote/end` | 팀장 | **(시연용)** 마감 시각을 지금으로 당겨 24시간이 지난 것으로 만듦 |
+| `PUT api/teams/{id}/meeting` `{ "day": 1, "start": 10.5 }` | 팀장 | 확정된 회의 시간 변경 |
+
+**규칙** (프론트 `lib/vote.ts` 와 같은 결과, 테스트로 확인)
+- 과반수 = `floor(팀원 수 / 2) + 1` (전체 팀원 기준, 4명이면 3명).
+- 과반을 넘은 후보 중 표가 가장 많은 후보로 **자동 확정**. 최다표가 둘 이상이면 **그 후보들끼리 재투표**: 후보는 동률인 것만 남고 표는 초기화되며 `revote: true`. (임의) 재투표를 시작할 때 마감도 새로 24시간.
+- 24시간 안에 과반이 안 나오면 마감(`ended: true`). 그 뒤 팀장이 단독 최다표로 확정(`confirm`)하거나 다시 투표(`restart`). 마감 시점의 최다표가 동률이거나 표가 없으면 확정은 할 수 없고 다시 투표만 가능.
+- 팀마다 진행 중인 투표는 하나뿐입니다.
+
+**오류**
+| 상태 | `code` | 언제 |
+| --- | --- | --- |
+| 400 | `invalid_options` / `duplicate_option` | 후보가 0개이거나 7개 이상 / 같은 시간이 두 번 |
+| 400 | `invalid_day` / `invalid_time` | 요일이 0~6 이 아님 / 30분 단위가 아니거나 24시 이후 |
+| 400 | `invalid_option` | 표에 후보가 하나도 없거나, 이 투표의 후보가 아님 |
+| 404 | `vote_not_found` / `meeting_not_found` | 진행 중인 투표 / 확정된 회의가 없음 |
+| 409 | `vote_exists` | 이미 진행 중인 투표가 있음 |
+| 409 | `vote_ended` | 마감된 투표에 투표함 |
+| 409 | `vote_not_ended` | 아직 마감 전인데 `confirm` / `restart` |
+| 409 | `no_single_top` | 마감 후 최다표가 동률이거나 표가 없는데 `confirm` |
+| 403 | `leader_only` / `not_allowed` | 팀장 전용 동작을 팀원이 함 / 취소를 만든 사람도 팀장도 아닌 사람이 함 |
+
+---
+
+## 8. 목표 · 할 일 (2차) `api/teams/{id}/...`
+
+**모든 동작의 응답이 같은 모양(`Todos`)입니다**: 내가 볼 수 있는 목표와 할 일 전체. 팀원이 아니면 404 `team_not_found`.
+
+```json
+{
+  "goals": [{ "id": "1", "teamId": "1", "title": "중간 발표 준비" }],
+  "todos": [{ "id": "1", "goalId": "1", "teamId": "1", "title": "발표 자료 초안 작성", "assigneeId": "1", "due": "2026-12-01", "status": "doing", "note": "" }]
+}
+```
+- `status`: `doing`(진행 중) → `requested`(완료 요청) → `done`(확인 완료). 새 할 일은 `doing` 으로 시작.
+- `due`: `YYYY-MM-DD`. `note`: 수행 내용(한 일과 결과, 최대 5000자).
+- **공개 범위는 서버가 지킵니다**: 팀장은 팀의 모든 할 일을, 팀원은 **자기 할 일만** 받습니다 (목표 이름은 모두 받음). 남의 할 일은 있는지도 알려주지 않고 404 `todo_not_found`.
+
+| 요청 | 권한 | 설명 |
+| --- | --- | --- |
+| `GET api/teams/{id}/todos` | 팀원 | 목표·할 일 목록 |
+| `POST api/teams/{id}/goals` `{ "title": "…", "todos": [{ "title": "…", "assigneeId": "2", "due": "2026-12-01" }] }` | 팀장 | 목표와 할 일 함께 만들기 → **201** `Todos` + `goalId`. 할 일 최대 50개 |
+| `PUT api/teams/{id}/goals/{goalId}` (같은 본문, 기존 할 일은 `id` 포함) | 팀장 | 고치기: 보내지 않은 기존 할 일은 **삭제**, `id` 없는 항목은 새로 추가 |
+| `DELETE api/teams/{id}/goals/{goalId}` | 팀장 | 목표 삭제. 안의 할 일도 함께 삭제 |
+| `POST api/teams/{id}/todos/{todoId}/request` `{ "note": "…" }` | 담당자 | 수행 내용을 적고 **완료 요청** (진행 중일 때만) |
+| `POST api/teams/{id}/todos/{todoId}/confirm` | 팀장 | **확인 완료** (완료 요청 상태일 때만). 팀장 자신의 할 일도 팀장이 직접 확인 |
+| `PUT api/teams/{id}/todos/{todoId}/note` `{ "note": "…" }` | 진행 중: 담당자 / 확인 완료 뒤: 담당자·팀장 | 수행 내용 저장 |
+
+**오류**: 400 `invalid_input`(제목이 비었거나 너무 김, 이 목표에 없는 할 일 id) · `invalid_assignee`(담당자가 팀원이 아님) · `invalid_due`(날짜 형식이 아님) · `too_many_todos` / 403 `leader_only`, `assignee_only` / 404 `goal_not_found`, `todo_not_found` / 409 `invalid_status`(지금 상태에서는 할 수 없는 동작).
+
+**(임의) 팀 탈퇴**: 탈퇴하면 이 팀 투표에 낸 내 표는 지워집니다. 맡은 할 일은 그대로 남고, 팀장이 담당자를 바꿉니다. (docs/screens.md 5장 "팀 탈퇴 시 처리"는 아직 미정)

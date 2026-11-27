@@ -16,10 +16,10 @@ export function TransferLeaderPage() {
 
   const selected = picked ?? others[0] ?? ''
 
-  function submit(e: FormEvent) {
+  async function submit(e: FormEvent) {
     e.preventDefault()
     if (!selected || !team) return
-    teamActions.transferLeader(team.id, selected)
+    await teamActions.transferLeader(team.id, selected)
     navigate(`/teams/${team.id}/members`)
   }
 

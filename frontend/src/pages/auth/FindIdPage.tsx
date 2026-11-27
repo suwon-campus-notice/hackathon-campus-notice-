@@ -3,18 +3,20 @@ import { Body, BottomActions, Screen, TopBar } from '../../components/layout'
 import { Button, Card, TextField } from '../../components/ui'
 import { auth } from '../../store'
 
-type Result = { kind: 'found'; loginId: string } | { kind: 'none' } | null
+type Result = { kind: 'found'; loginId: string } | { kind: 'none' } | { kind: 'problem'; message: string } | null
 
 export function FindIdPage() {
   const [name, setName] = useState('')
   const [studentId, setStudentId] = useState('')
   const [result, setResult] = useState<Result>(null)
 
-  function submit(e: FormEvent) {
+  async function submit(e: FormEvent) {
     e.preventDefault()
     if (name.trim() === '' || studentId.trim() === '') return
-    const loginId = auth.findLoginId(name, studentId)
-    setResult(loginId ? { kind: 'found', loginId } : { kind: 'none' })
+    const found = await auth.findLoginId(name, studentId)
+    if (found.ok) setResult({ kind: 'found', loginId: found.loginId })
+    else if (found.reason === 'none') setResult({ kind: 'none' })
+    else setResult({ kind: 'problem', message: found.message })
   }
 
   if (result?.kind === 'found') {
@@ -31,6 +33,20 @@ export function FindIdPage() {
           <Button to="/login">로그인하기</Button>
           <Button to="/find-password" variant="secondary">
             비밀번호 찾기
+          </Button>
+        </BottomActions>
+      </Screen>
+    )
+  }
+
+  if (result?.kind === 'problem') {
+    return (
+      <Screen>
+        <TopBar title="아이디를 찾지 못했어요" description={result.message} />
+        <BottomActions>
+          <Button onClick={() => setResult(null)}>다시 입력하기</Button>
+          <Button to="/login" variant="secondary">
+            로그인으로 돌아가기
           </Button>
         </BottomActions>
       </Screen>

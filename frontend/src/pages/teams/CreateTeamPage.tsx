@@ -10,10 +10,11 @@ export function CreateTeamPage() {
   const [name, setName] = useState('')
   const [created, setCreated] = useState<Team | null>(null)
 
-  function submit(e: FormEvent) {
+  async function submit(e: FormEvent) {
     e.preventDefault()
     if (!name.trim()) return
-    setCreated(teamActions.create(name))
+    const team = await teamActions.create(name)
+    if (team) setCreated(team)
   }
 
   if (created) {

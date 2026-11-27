@@ -1,10 +1,10 @@
-"""DB 표 정의. (1차: users, sessions, attempts / 팀·시간표는 3·4단계에서 추가)
+"""DB 표 정의. (1차: users, sessions, attempts, 팀, 시간표 / 2차: 투표, 회의, 목표, 할 일)
 
 id 는 숫자로 저장하고, API 에서는 문자열로 내보낸다 (프론트 types.ts 가 문자열 id).
 """
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .db import Base, utcnow
@@ -91,3 +91,79 @@ class TimetableEntry(Base):
     start_min: Mapped[int] = mapped_column(Integer)
     end_min: Mapped[int] = mapped_column(Integer)
     kind: Mapped[str] = mapped_column(String(10))  # 'class' | 'blocked'
+
+
+# ───── 2차: 회의 시간 투표 · 확정된 회의 ─────
+# 팀마다 진행 중인 투표는 하나뿐이다(team_id 가 unique). 팀이 지워지면 함께 지워진다.
+
+
+class Vote(Base):
+    __tablename__ = "votes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    team_id: Mapped[int] = mapped_column(ForeignKey("teams.id", ondelete="CASCADE"), unique=True)
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    deadline: Mapped[datetime] = mapped_column(DateTime)  # 마감 시각. 지났으면 마감된 투표로 본다
+    revote: Mapped[bool] = mapped_column(Boolean, default=False)  # 동률로 다시 투표하는 중인지
+
+
+class VoteOption(Base):
+    """투표 후보 하나: 요일 + 회의 시작 시각(분). 회의는 시작 시간만 정한다."""
+
+    __tablename__ = "vote_options"
+    __table_args__ = (UniqueConstraint("vote_id", "day", "start_min"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    vote_id: Mapped[int] = mapped_column(ForeignKey("votes.id", ondelete="CASCADE"), index=True)
+    day: Mapped[int] = mapped_column(Integer)
+    start_min: Mapped[int] = mapped_column(Integer)
+
+
+class Ballot(Base):
+    """한 사람이 고른 후보 하나 (복수 선택이라 사람마다 여러 줄)."""
+
+    __tablename__ = "ballots"
+    __table_args__ = (UniqueConstraint("vote_id", "user_id", "option_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    vote_id: Mapped[int] = mapped_column(ForeignKey("votes.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    option_id: Mapped[int] = mapped_column(ForeignKey("vote_options.id", ondelete="CASCADE"))
+
+
+class Meeting(Base):
+    """확정된 회의 시간. 팀마다 하나."""
+
+    __tablename__ = "meetings"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    team_id: Mapped[int] = mapped_column(ForeignKey("teams.id", ondelete="CASCADE"), unique=True)
+    day: Mapped[int] = mapped_column(Integer)
+    start_min: Mapped[int] = mapped_column(Integer)
+    votes: Mapped[int] = mapped_column(Integer, default=0)  # 확정 당시 득표 수
+
+
+# ───── 2차: 목표 · 할 일 ─────
+
+
+class Goal(Base):
+    __tablename__ = "goals"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    team_id: Mapped[int] = mapped_column(ForeignKey("teams.id", ondelete="CASCADE"), index=True)
+    title: Mapped[str] = mapped_column(String(200))
+
+
+class Todo(Base):
+    """개인 목표(할 일). 목표가 지워지면 함께 지워진다. due 는 'YYYY-MM-DD' 글자 그대로 저장한다."""
+
+    __tablename__ = "todos"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    goal_id: Mapped[int] = mapped_column(ForeignKey("goals.id", ondelete="CASCADE"), index=True)
+    team_id: Mapped[int] = mapped_column(ForeignKey("teams.id", ondelete="CASCADE"), index=True)
+    title: Mapped[str] = mapped_column(String(200))
+    assignee_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    due: Mapped[str] = mapped_column(String(10))
+    status: Mapped[str] = mapped_column(String(10), default="doing")  # 'doing' | 'requested' | 'done'
+    note: Mapped[str] = mapped_column(Text, default="")  # 수행 내용(한 일과 결과)

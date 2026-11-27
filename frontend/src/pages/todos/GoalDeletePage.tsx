@@ -29,8 +29,8 @@ export function GoalDeletePage() {
       <BottomActions>
         <Button
           variant="dangerSolid"
-          onClick={() => {
-            todoActions.deleteGoal(goal.id)
+          onClick={async () => {
+            await todoActions.deleteGoal(goal.id)
             navigate(back, { replace: true })
           }}
         >

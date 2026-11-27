@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { HashRouter, Navigate, Outlet, Route, Routes } from 'react-router-dom'
 import { OfflineGate } from './components/layout/OfflineGate'
 import { ChangePasswordPage } from './pages/account/ChangePasswordPage'
@@ -27,7 +28,37 @@ import { GoalDeletePage } from './pages/todos/GoalDeletePage'
 import { GoalFormPage } from './pages/todos/GoalFormPage'
 import { TodoDetailPage } from './pages/todos/TodoDetailPage'
 import { TodoListPage } from './pages/todos/TodoListPage'
-import { useStore } from './store'
+import { Notice } from './components/ui'
+import { dismissError, useStore } from './store'
+
+/** 서버 확인·로그인 상태 조회가 끝날 때까지 기다린다 */
+function ReadyGate({ children }: { children: ReactNode }) {
+  const ready = useStore((s) => s.ready)
+  if (!ready) {
+    return (
+      <div className="flex min-h-dvh items-center justify-center text-sm text-muted" role="status">
+        불러오는 중이에요…
+      </div>
+    )
+  }
+  return <>{children}</>
+}
+
+/** 서버 연결 오류 같은 안내를 화면 위에 띄운다 */
+function ErrorBanner() {
+  const error = useStore((s) => s.error)
+  if (!error) return null
+  return (
+    <div role="alert" className="fixed inset-x-0 top-0 z-50 mx-auto flex max-w-md items-start gap-2 p-3">
+      <Notice tone="warn">
+        <span className="block">{error}</span>
+        <button type="button" onClick={dismissError} className="mt-1 min-h-11 text-sm font-medium underline">
+          닫기
+        </button>
+      </Notice>
+    </div>
+  )
+}
 
 /** 로그인하지 않았으면 로그인 화면으로 보낸다 */
 function RequireLogin() {
@@ -43,6 +74,8 @@ export default function App() {
   return (
     <HashRouter>
       <OfflineGate>
+      <ReadyGate>
+      <ErrorBanner />
       <Routes>
         <Route path="/" element={<Navigate to="/teams" replace />} />
         <Route path="/login" element={<LoginPage />} />
@@ -82,6 +115,7 @@ export default function App() {
 
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
+      </ReadyGate>
       </OfflineGate>
     </HashRouter>
   )
