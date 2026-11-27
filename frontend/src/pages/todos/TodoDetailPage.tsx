@@ -27,14 +27,14 @@ export function TodoDetailPage() {
   const editingDoing = todo.status === 'doing' && isAssignee
   const editingDone = todo.status === 'done' && draft !== null
 
-  function submit(e: FormEvent) {
+  async function submit(e: FormEvent) {
     e.preventDefault()
     if (!todo) return
     if (editingDoing) {
-      todoActions.saveNote(todo.id, (draft ?? todo.note).trim())
-      todoActions.setStatus(todo.id, 'requested')
+      // 수행 내용을 적고 완료 요청을 한 번에 보낸다
+      await todoActions.requestDone(todo.id, (draft ?? todo.note).trim())
     } else if (editingDone) {
-      todoActions.saveNote(todo.id, (draft ?? '').trim())
+      await todoActions.saveNote(todo.id, (draft ?? '').trim())
       setDraft(null)
     }
   }
@@ -104,7 +104,7 @@ export function TodoDetailPage() {
         <BottomActions>
           {editingDoing && <Button type="submit">완료 요청</Button>}
           {todo.status === 'requested' && leader && (
-            <Button onClick={() => todoActions.setStatus(todo.id, 'done')}>확인 완료</Button>
+            <Button onClick={() => todoActions.confirm(todo.id)}>확인 완료</Button>
           )}
           {todo.status === 'done' && !editingDone && (
             <Button variant="secondary" onClick={() => setDraft(todo.note)}>

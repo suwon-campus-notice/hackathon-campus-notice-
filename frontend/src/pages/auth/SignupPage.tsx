@@ -5,7 +5,7 @@ import { Button, SelectField, TextField } from '../../components/ui'
 import { SECURITY_QUESTIONS } from '../../mocks/seed'
 import { auth } from '../../store'
 
-type IdCheck = 'unchecked' | 'taken' | 'ok'
+type IdCheck = 'unchecked' | 'taken' | 'ok' | 'invalid'
 
 export function SignupPage() {
   const navigate = useNavigate()
@@ -18,28 +18,39 @@ export function SignupPage() {
   const [question, setQuestion] = useState<string>(SECURITY_QUESTIONS[0])
   const [answer, setAnswer] = useState('')
   const [submitted, setSubmitted] = useState(false)
+  /** 서버가 알려 준 아이디·가입 오류 안내 */
+  const [serverMessage, setServerMessage] = useState('')
 
   const mismatch = confirm !== '' && password !== confirm
   const required = (v: string) => (submitted && v.trim() === '' ? '입력해 주세요.' : undefined)
 
-  function checkId() {
+  async function checkId() {
     if (loginId.trim() === '') return
-    setIdCheck(auth.isLoginIdTaken(loginId) ? 'taken' : 'ok')
+    const result = await auth.isLoginIdTaken(loginId)
+    if (result.status === 'invalid') setServerMessage(result.message)
+    setIdCheck(result.status)
   }
 
-  function submit(e: FormEvent) {
+  async function submit(e: FormEvent) {
     e.preventDefault()
     setSubmitted(true)
     const filled = [name, loginId, password, confirm, studentId, answer].every((v) => v.trim() !== '')
     if (!filled || mismatch || idCheck !== 'ok') return
-    if (auth.signup({ name, loginId, password, studentId, question, answer })) navigate('/teams')
-    else setIdCheck('taken')
+    const result = await auth.signup({ name, loginId, password, studentId, question, answer })
+    if (result.ok) {
+      navigate('/teams')
+      return
+    }
+    setServerMessage(result.message)
+    setIdCheck(result.code === 'taken' ? 'taken' : 'invalid')
   }
 
   const idError =
     idCheck === 'taken'
       ? '이미 사용 중인 아이디예요. 다른 아이디를 입력해 주세요.'
-      : submitted && loginId.trim() !== '' && idCheck === 'unchecked'
+      : idCheck === 'invalid'
+        ? serverMessage
+        : submitted && loginId.trim() !== '' && idCheck === 'unchecked'
         ? '중복 확인을 해 주세요.'
         : required(loginId)
 

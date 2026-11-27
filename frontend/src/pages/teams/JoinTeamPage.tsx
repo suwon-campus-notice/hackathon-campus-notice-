@@ -1,13 +1,38 @@
+import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Body, BottomActions, Screen, TopBar } from '../../components/layout'
 import { Button, Card } from '../../components/ui'
+import type { Team } from '../../types'
 import { teamActions, useAppState, userName } from '../../store'
 
 export function JoinTeamPage() {
   const { code = '' } = useParams()
   const s = useAppState()
   const navigate = useNavigate()
-  const found = teamActions.findByInvite(code)
+  // 어느 코드에 대한 조회 결과인지 함께 들고 있어서, 코드가 바뀌면 다시 "찾는 중"이 된다
+  const [lookup, setLookup] = useState<{ code: string; result: { team: Team; expired: boolean } | null } | null>(null)
+  const [joining, setJoining] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    teamActions.findByInvite(code).then((result) => {
+      if (!cancelled) setLookup({ code, result })
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [code])
+
+  // undefined: 찾는 중, null: 없는 링크
+  const found = lookup?.code === code ? lookup.result : undefined
+
+  if (found === undefined) {
+    return (
+      <Screen>
+        <TopBar title="초대 링크를 확인하고 있어요" />
+      </Screen>
+    )
+  }
 
   if (!found) {
     return (
@@ -37,10 +62,12 @@ export function JoinTeamPage() {
 
   const { team } = found
 
-  function join() {
-    // 이미 팀원이면 가입 없이 이동만 한다
-    if (!team.memberIds.includes(s.currentUserId ?? '')) teamActions.join(team.id)
-    navigate(`/teams/${team.id}`)
+  async function join() {
+    setJoining(true)
+    // 이미 팀원이어도 서버가 그대로 팀을 돌려준다
+    const joined = await teamActions.join(code)
+    setJoining(false)
+    if (joined) navigate(`/teams/${team.id}`)
   }
 
   return (
@@ -62,7 +89,9 @@ export function JoinTeamPage() {
         </Card>
       </Body>
       <BottomActions>
-        <Button onClick={join}>팀에 참여하기</Button>
+        <Button onClick={join} disabled={joining}>
+          팀에 참여하기
+        </Button>
         <Button to="/teams" variant="ghost">
           취소
         </Button>

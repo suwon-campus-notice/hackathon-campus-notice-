@@ -36,13 +36,13 @@ export function VotePage() {
 
   const toggle = (id: string, checked: boolean) => setPicked((p) => (checked ? [...p, id] : p.filter((x) => x !== id)))
 
-  const submit = (e: FormEvent) => {
+  const submit = async (e: FormEvent) => {
     e.preventDefault()
     if (picked.length === 0) return
     // 이 표로 동률이 되면 스토어가 표를 비우므로, 직전 득표 수를 먼저 계산해 둔다
     const next = { ...vote, ballots: { ...vote.ballots, [me.id]: picked } }
     const nextCounts = tally(next)
-    scheduleActions.castVote(team.id, picked)
+    await scheduleActions.castVote(team.id, picked)
     if (getState().votes[team.id]?.revote && !vote.revote) setPrevTie(nextCounts)
     setEditing(false)
     setPicked([])

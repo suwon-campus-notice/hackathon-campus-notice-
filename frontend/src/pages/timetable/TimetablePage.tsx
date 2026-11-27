@@ -46,10 +46,11 @@ export function TimetablePage() {
   const entryAt = (day: Day, slot: number) => entries.find((e) => e.day === day && timeOf(slot) >= e.start && timeOf(slot) < e.end)
 
   /** 범위를 입력한다. 이미 찬 칸은 건너뛰고 빈 구간만 채운다. */
-  function fill(day: Day, a: number, b: number) {
+  async function fill(day: Day, a: number, b: number) {
     const segments = freeSegments(Math.min(a, b), Math.max(a, b), (slot) => Boolean(entryAt(day, slot)))
+    // 서버에 순서대로 저장한다 (동시에 보내면 순서가 뒤섞일 수 있다)
     for (const [from, to] of segments) {
-      timetableActions.add({ day, start: timeOf(from), end: timeOf(to + 1), kind })
+      await timetableActions.add({ day, start: timeOf(from), end: timeOf(to + 1), kind })
     }
   }
 

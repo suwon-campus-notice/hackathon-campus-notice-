@@ -63,7 +63,11 @@ class Settings(BaseSettings):
     availability_end_hour: int = 21
 
     # ── 투표 (2차) ──
-    vote_hours: int = 24  # 확정: 투표 기한 24시간
+    vote_hours: int = 24  # 확정: 투표 기한 24시간 (동률 재투표를 시작할 때도 새로 24시간 (임의))
+    vote_max_options: int = 6  # (임의) 후보 최대 개수 (추천 시간 + 직접 추가한 시간)
+
+    # ── 목표·할 일 (2차, 임의) ──
+    goal_max_todos: int = 50  # 목표 하나에 담을 수 있는 할 일 수
 
     @property
     def public_base_path(self) -> str:

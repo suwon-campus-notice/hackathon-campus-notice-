@@ -1,10 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { Body, BottomActions, Screen, TopBar } from '../../components/layout'
 import { Button, Card, Chip, cx, Notice } from '../../components/ui'
 import { WINDOW_END, WINDOW_START } from '../../lib/availability'
 import { formatHour } from '../../lib/format'
-import { scheduleActions } from '../../store'
+import { availabilityActions, scheduleActions } from '../../store'
 import { DAY_LABELS, type Day } from '../../types'
 import { CustomPicks, type CustomPick } from './CustomPicks'
 import { useMemberTeam } from './scheduleHelpers'
@@ -22,10 +22,15 @@ export function AvailabilityPage() {
   const [custom, setCustom] = useState<CustomPick[]>([])
   const [hover, setHover] = useState<Cell | null>(null)
   const [pinned, setPinned] = useState<Cell | null>(null)
+  const teamId = team?.id
+  // 서버 모드: 화면에 들어올 때마다 최신 공통 가능 시간을 불러온다
+  useEffect(() => {
+    if (teamId) void availabilityActions.load(teamId)
+  }, [teamId])
   if (!team || !me) return <Navigate to="/teams" replace />
 
   const base = `/teams/${team.id}`
-  const { availability, notEntered, entered } = teamAvailability(s, team)
+  const { availability, notEntered, entered, loading } = teamAvailability(s, team)
   const { total, days, picks } = availability
   const hasVote = Boolean(s.votes[team.id])
   const recommended: CustomPick[] = picks.map((p) => ({ day: p.day, start: p.start }))
@@ -35,8 +40,8 @@ export function AvailabilityPage() {
   const shown = pinned ?? hover
   const peopleLabel = (n: number) => (n === total ? '전원' : `${n}명`)
 
-  const createVote = () => {
-    if (scheduleActions.createVote(team.id, options)) {
+  const createVote = async () => {
+    if (await scheduleActions.createVote(team.id, options)) {
       navigate(`${base}/vote`)
     }
   }
@@ -55,7 +60,9 @@ export function AvailabilityPage() {
           </Notice>
         )}
 
-        {entered === 0 ? (
+        {loading ? (
+          <Notice tone="neutral">공통 가능 시간을 불러오고 있어요.</Notice>
+        ) : entered === 0 ? (
           <Notice tone="neutral">아직 시간표를 입력한 팀원이 없어요. 팀원이 시간표를 입력하면 공통 가능 시간이 보여요.</Notice>
         ) : (
           <>

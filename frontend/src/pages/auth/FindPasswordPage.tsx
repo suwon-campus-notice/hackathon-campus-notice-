@@ -17,36 +17,37 @@ export function FindPasswordPage() {
   const [wrongCount, setWrongCount] = useState(0)
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
+  const [resetError, setResetError] = useState<string>()
 
-  function submitId(e: FormEvent) {
+  async function submitId(e: FormEvent) {
     e.preventDefault()
-    const q = auth.questionFor(loginId)
-    if (q === null) {
-      setIdError('일치하는 계정이 없어요.')
+    const q = await auth.questionFor(loginId)
+    if (!q.ok) {
+      setIdError(q.message)
       return
     }
     setIdError(undefined)
-    setQuestion(q)
+    setQuestion(q.question)
     setWrongCount(0)
     setAnswer('')
     setStep(2)
   }
 
-  function submitAnswer(e: FormEvent) {
+  async function submitAnswer(e: FormEvent) {
     e.preventDefault()
     if (answer.trim() === '') return
-    if (auth.checkAnswer(loginId, answer)) {
-      setStep(3)
-    } else {
-      setWrongCount((n) => n + 1)
-    }
+    const result = await auth.checkAnswer(loginId, answer)
+    if (result.ok) setStep(3)
+    // 서버가 막았으면(5번 틀림) 바로 잠금 화면으로 보낸다
+    else setWrongCount((n) => (result.blocked ? MAX_ATTEMPTS : n + 1))
   }
 
-  function submitPassword(e: FormEvent) {
+  async function submitPassword(e: FormEvent) {
     e.preventDefault()
     if (password === '' || password !== confirm) return
-    auth.resetPassword(loginId, password)
-    navigate('/login')
+    const result = await auth.resetPassword(loginId, answer, password)
+    if (result.ok) navigate('/login')
+    else setResetError(result.message)
   }
 
   if (wrongCount >= MAX_ATTEMPTS) {
@@ -121,7 +122,17 @@ export function FindPasswordPage() {
       <TopBar title="새 비밀번호" description="3/3 · 새 비밀번호를 입력해 주세요." />
       <form onSubmit={submitPassword} className="flex flex-1 flex-col">
         <Body>
-          <TextField label="새 비밀번호" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
+          <TextField
+            label="새 비밀번호"
+            type="password"
+            value={password}
+            onChange={(e) => {
+              setPassword(e.target.value)
+              setResetError(undefined)
+            }}
+            error={resetError}
+            autoComplete="new-password"
+          />
           <TextField
             label="새 비밀번호 확인"
             type="password"

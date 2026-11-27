@@ -52,8 +52,8 @@ export function SchedulePage() {
             )}
             <Button
               variant="secondary"
-              onClick={() => {
-                scheduleActions.restartVote(team.id)
+              onClick={async () => {
+                await scheduleActions.restartVote(team.id)
                 navigate(`/teams/${team.id}/availability`)
               }}
             >
@@ -81,16 +81,18 @@ export function SchedulePage() {
               {(vote.ballots[me.id] ?? []).length > 0 ? '투표했어요.' : '아직 투표하지 않았어요. 가능한 시간을 골라주세요.'}
             </p>
             <Button to={`${base}/vote`}>투표하기</Button>
-            <details className="text-xs text-muted">
-              <summary className="min-h-8 cursor-pointer">시연용</summary>
-              <button
-                type="button"
-                onClick={() => scheduleActions.endVote(team.id)}
-                className="min-h-11 bg-transparent p-0 text-xs text-muted underline"
-              >
-                (시연) 24시간 지난 것으로 만들기
-              </button>
-            </details>
+            {leader && (
+              <details className="text-xs text-muted">
+                <summary className="min-h-8 cursor-pointer">시연용</summary>
+                <button
+                  type="button"
+                  onClick={() => scheduleActions.endVote(team.id)}
+                  className="min-h-11 bg-transparent p-0 text-xs text-muted underline"
+                >
+                  (시연) 24시간 지난 것으로 만들기
+                </button>
+              </details>
+            )}
           </Card>
         )}
 

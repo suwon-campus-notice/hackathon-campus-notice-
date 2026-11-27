@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse, HTMLResponse, Response
 from .config import settings
 from .db import init_db
 from .errors import install_error_handlers, install_validation_handler
-from .routers import auth, availability, teams, timetable
+from .routers import auth, availability, schedule, teams, timetable, todos
 
 
 @asynccontextmanager
@@ -43,6 +43,8 @@ app.include_router(auth.router)
 app.include_router(teams.router)
 app.include_router(timetable.router)
 app.include_router(availability.router)
+app.include_router(schedule.router)
+app.include_router(todos.router)
 
 
 @app.get("/api/health", tags=["상태"], summary="서버 상태 확인")

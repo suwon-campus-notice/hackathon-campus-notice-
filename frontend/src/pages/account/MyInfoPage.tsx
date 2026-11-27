@@ -8,8 +8,8 @@ export function MyInfoPage() {
   const user = currentUser(useAppState())
   if (!user) return null
 
-  function logout() {
-    auth.logout()
+  async function logout() {
+    await auth.logout()
     navigate('/login')
   }
 

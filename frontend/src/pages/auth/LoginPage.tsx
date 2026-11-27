@@ -12,13 +12,16 @@ export function LoginPage() {
   const [password, setPassword] = useState('')
   const [failed, setFailed] = useState(false)
 
-  function submit(e: FormEvent) {
+  const [busy, setBusy] = useState(false)
+
+  async function submit(e: FormEvent) {
     e.preventDefault()
-    if (auth.login(loginId.trim(), password)) {
-      navigate('/teams')
-    } else {
-      setFailed(true)
-    }
+    setBusy(true)
+    const result = await auth.login(loginId.trim(), password)
+    setBusy(false)
+    if (result === 'ok') navigate('/teams')
+    // 'error' 는 화면 위 안내(서버 연결 오류 등)로 따로 알린다
+    else if (result === 'wrong') setFailed(true)
   }
 
   // 어느 쪽이 틀렸는지 알려 주지 않도록 두 칸 모두 같은 상태로 표시한다
@@ -54,7 +57,9 @@ export function LoginPage() {
               아이디 또는 비밀번호가 맞지 않아요. 다시 확인해 주세요.
             </p>
           )}
-          <Button type="submit">로그인</Button>
+          <Button type="submit" disabled={busy}>
+            로그인
+          </Button>
         </form>
 
         <div className="flex flex-col items-center gap-1">

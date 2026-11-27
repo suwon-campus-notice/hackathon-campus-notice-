@@ -28,3 +28,19 @@ def test_seed_twice_is_refused(db):
     seed(db)
     with pytest.raises(ValueError):
         seed(db)
+
+
+def test_seed_vote_meeting_and_todos(demo):
+    """2차 시연 데이터: 프론트 mocks/seed.ts 와 같은 투표·회의·할 일"""
+    t1, t2, _ = demo.get("/api/teams").json()
+    s1 = demo.get(f"/api/teams/{t1['id']}/schedule").json()
+    assert s1["meeting"] is None and s1["vote"]["ended"] is False and s1["vote"]["hoursLeft"] == 23
+    assert [(o["day"], o["start"]) for o in s1["vote"]["options"]] == [(2, 15), (0, 16), (6, 14)]
+    me = demo.get("/api/auth/me").json()["id"]
+    assert me not in s1["vote"]["ballots"]  # 진우는 아직 투표하지 않음
+    assert len(s1["vote"]["ballots"]) == 3
+    s2 = demo.get(f"/api/teams/{t2['id']}/schedule").json()
+    assert s2["vote"] is None and (s2["meeting"]["day"], s2["meeting"]["start"], s2["meeting"]["votes"]) == (2, 15, 4)
+    todos = demo.get(f"/api/teams/{t1['id']}/todos").json()  # 진우는 팀장이라 전체
+    assert [g["title"] for g in todos["goals"]] == ["중간 발표 준비", "최종 보고서"]
+    assert sorted(t["status"] for t in todos["todos"]) == ["doing", "doing", "doing", "done", "requested"]

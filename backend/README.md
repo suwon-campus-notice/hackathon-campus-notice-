@@ -17,7 +17,7 @@ Python FastAPI 기반 REST API와 PostgreSQL(Supabase) 연동을 계획하며, �
 
 ## 현재 상태
 
-**1차 범위(가입·로그인, 팀, 시간표, 공통 공강)가 구현되어 있습니다.** 회의 투표·확정과 목표·할 일(2차)은 아직 없습니다. 팀원 모집·공개 모집글·지원자 매칭은 개발 범위에서 제외합니다.
+**1차(가입·로그인, 팀, 시간표, 공통 공강)와 2차(회의 투표·확정, 목표·할 일)가 구현되어 있습니다.** 팀원 모집·공개 모집글·지원자 매칭은 개발 범위에서 제외합니다.
 
 - API 목록과 요청·응답 예시: [`docs/API_SPEC.md`](../docs/API_SPEC.md) (서버를 켜면 `/docs` 에서도 볼 수 있음)
 - 구현: FastAPI + SQLAlchemy + SQLite. 서버 하나가 API(`api/...`)와 화면(`frontend/dist`)을 함께 제공합니다. 밖에서 열리는 포트가 6000번 하나뿐이라서입니다.
@@ -31,12 +31,13 @@ backend/
 │   ├── main.py          서버 시작점 (API + 화면 파일 제공 + /docs)
 │   ├── config.py        설정값 모음 ((임의) 값은 여기서 확인, 바꿀 때는 .env 사용)
 │   ├── db.py            DB 연결
-│   ├── models.py        DB 표 (users, sessions, attempts, teams, team_members, invites, timetable_entries)
+│   ├── models.py        DB 표 (users, sessions, attempts, teams, team_members, invites, timetable_entries, votes, vote_options, ballots, meetings, goals, todos)
 │   ├── security.py      비밀번호 해시, 로그인 세션, 시도 횟수 제한
 │   ├── errors.py        오류 응답 형식 {code, message}
-│   ├── routers/         auth, teams, timetable, availability (API 경로별 코드)
+│   ├── routers/         auth, teams, timetable, availability, schedule(투표·회의), todos(목표·할 일)
 │   └── services/
-│       └── availability.py   공통 공강 계산 (프론트 lib/availability.ts 와 같은 결과)
+│       ├── availability.py   공통 공강 계산 (프론트 lib/availability.ts 와 같은 결과)
+│       └── vote.py           투표 판정 (프론트 lib/vote.ts 와 같은 결과)
 ├── scripts/
 │   ├── start.sh / stop.sh    서버 켜기 / 끄기
 │   └── seed_demo.py          시연용 가짜 데이터 넣기

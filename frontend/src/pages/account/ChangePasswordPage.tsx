@@ -14,11 +14,15 @@ export function ChangePasswordPage() {
   const mismatch = confirm !== '' && next !== confirm
   const ready = current !== '' && next !== '' && confirm !== '' && !mismatch
 
-  function submit(e: FormEvent) {
+  const [nextError, setNextError] = useState<string>()
+
+  async function submit(e: FormEvent) {
     e.preventDefault()
     if (!ready) return
-    if (auth.changePassword(current, next)) navigate('/me')
-    else setCurrentWrong(true)
+    const result = await auth.changePassword(current, next)
+    if (result.ok) navigate('/me')
+    else if (result.reason === 'wrong') setCurrentWrong(true)
+    else setNextError(result.message)
   }
 
   return (
@@ -37,7 +41,17 @@ export function ChangePasswordPage() {
             error={currentWrong ? '현재 비밀번호가 맞지 않아요.' : undefined}
             autoComplete="current-password"
           />
-          <TextField label="새 비밀번호" type="password" value={next} onChange={(e) => setNext(e.target.value)} autoComplete="new-password" />
+          <TextField
+            label="새 비밀번호"
+            type="password"
+            value={next}
+            onChange={(e) => {
+              setNext(e.target.value)
+              setNextError(undefined)
+            }}
+            error={nextError}
+            autoComplete="new-password"
+          />
           <TextField
             label="새 비밀번호 확인"
             type="password"

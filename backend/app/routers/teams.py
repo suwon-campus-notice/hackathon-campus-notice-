@@ -8,13 +8,13 @@ from datetime import timedelta
 
 from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..db import get_db, utcnow
 from ..errors import ApiError
-from ..models import Invite, Team, TeamMember, User
+from ..models import Ballot, Invite, Team, TeamMember, User, Vote
 from ..security import current_user
 
 LEADER, MEMBER = "leader", "member"
@@ -189,6 +189,10 @@ def leave_team(team_id: str, user: User = Depends(current_user), db: Session = D
             raise ApiError(409, "leader_must_transfer", "팀장은 팀장을 먼저 넘겨야 탈퇴할 수 있어요.")
         db.delete(team)  # 팀원·초대 링크도 함께 지워진다 (CASCADE)
     else:
+        # (임의) 탈퇴하면 이 팀 투표에 낸 내 표는 지운다. 맡은 할 일은 그대로 두고 팀장이 담당자를 바꾼다.
+        vote = db.scalar(select(Vote).where(Vote.team_id == team.id))
+        if vote:
+            db.execute(delete(Ballot).where(Ballot.vote_id == vote.id, Ballot.user_id == user.id))
         db.delete(me)
     db.commit()
     return Response(status_code=204)
